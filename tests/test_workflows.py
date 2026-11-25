@@ -95,3 +95,24 @@ def test_reusable_interfaces_and_guards() -> None:
         assert 'if [ "$open" -ge 3 ]; then' in text
         assert "gh run list" not in text
         assert "steps.caps.outputs.allowed == 'true'" in text
+
+
+def test_generation_requires_reservation_and_cpu_smoke_before_credentials() -> None:
+    text = (WF / "agent-train.yml").read_text()
+    reserve = text.index("- name: Reserve generation budget")
+    smoke = text.index("- name: Generation CPU smoke")
+    launch = text.index("- name: Generate and verify durable resume on Modal")
+    assert reserve < smoke < launch
+    assert "MODAL_TOKEN" not in text[reserve:launch]
+    assert "check_generation_caps.py" in text[reserve:smoke]
+    assert "--limit 1000" in text[reserve:smoke]
+    assert "if: always() && inputs.mode == 'generation'" in text[launch:]
+
+
+def test_generation_does_not_enter_training_or_benchmark_steps() -> None:
+    text = (WF / "agent-train.yml").read_text()
+    steps = text.split("      - name: ")[1:]
+    for step in steps:
+        if any(command in step for command in ("make data", "make eval-smoke", "modal_train.py",
+                                               "r0 leaderboard", "gh pr create")):
+            assert "if: inputs.mode == 'train'" in step
